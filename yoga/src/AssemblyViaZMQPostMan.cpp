@@ -80,13 +80,13 @@ std::shared_ptr<OversetData> assemblyViaZMQPostMan(MessagePasser mp,
     OverlapDetector overlap_detector(extents_for_ranks);
 
     Tracer::traceMemory();
+    auto config = YOGA::YogaConfiguration(mp);
     std::shared_ptr<LoadBalancer> loadBalancer = nullptr;
     Tracer::begin("build load balancer (old)");
-    loadBalancer = std::make_shared<CartesianLoadBalancer>(mp, view, mesh_system_info);
+    loadBalancer = std::make_shared<CartesianLoadBalancer>(mp, view, mesh_system_info, config.maxHoleMapCells());
     Tracer::end("build load balancer (old)");
     rootPrinter.print("Total work units: "+std::to_string(loadBalancer->getRemainingVoxelCount())+"\n");
 
-    auto config = YOGA::YogaConfiguration(mp);
     auto hole_maps = createHoleMaps(mp, view, partition_info, mesh_system_info, config.maxHoleMapCells());
 
     auto initial_work_unit_mask = getInitialWorkUnitMask(mp, loadBalancer);
@@ -182,6 +182,7 @@ std::shared_ptr<OversetData> assemblyViaZMQPostMan(MessagePasser mp,
                                                               hole_maps,
                                                               extra_layers,
                                                               should_add_max_receptors,
+                                                              config.maxHoleMapCells(),
                                                               mp);
     Tracer::end("type assignment");
 

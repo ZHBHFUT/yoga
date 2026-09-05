@@ -7,6 +7,9 @@ bool ScalableHoleMap::doesOverlapHole(Parfait::Extent<double>& e) const {
         for (int j = slice.lo[1]; j < slice.hi[1]; j++) {
             for (int k = slice.lo[2]; k < slice.hi[2]; k++) {
                 int id = block.convert_ijk_ToCellId(i, j, k);
+                if (id < 0 || static_cast<size_t>(id) >= cell_statuses.size()) {
+                    continue;
+                }
                 if (CartBlockFloodFill::Crossing == cell_statuses[id] or
                     CartBlockFloodFill::InHole == cell_statuses[id]) return true;
             }

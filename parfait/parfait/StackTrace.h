@@ -1,9 +1,14 @@
 #pragma once
 #include <string>
-#include <execinfo.h>
+#ifdef _WIN32
+namespace Parfait {
+inline std::string stackTrace() { return {}; }
+}
+#else
 #include <sstream>
 #include <iterator>
 #include <cxxabi.h>
+#include <execinfo.h>
 
 namespace Parfait {
 namespace stack_trace_impl {
@@ -42,3 +47,4 @@ inline std::string stackTrace() {
     return trace;
 }
 }
+#endif

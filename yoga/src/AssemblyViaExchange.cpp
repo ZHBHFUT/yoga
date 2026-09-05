@@ -33,6 +33,7 @@
 #include "FragmentBalancer.h"
 #include "ChunkedPointGatherer.h"
 #include <parfait/LinearPartitioner.h>
+#include "YogaMemoryProbe.h"
 
 namespace YOGA{
 
@@ -124,13 +125,13 @@ std::shared_ptr<OversetData> assemblyViaExchange(MessagePasser mp,
                                                  bool should_add_max_receptors,
                                                  const std::vector<int>& component_grid_importance,
                                                  std::function<bool(double*, int, double*)> is_in_cell) {
+    yogaMemProbe("assemblyViaExchange enter", mp.Rank());
     mp.Barrier();
     auto before_assembly = Parfait::Now();
     Tracer::begin("Domain Assembly");
     Tracer::traceMemory();
     RootPrinter rootPrinter(mp.Rank());
     rootPrinter.print("Yoga: starting domain assembly\n");
-
     auto beginTrace = [](const std::string& s){
         Tracer::begin(s);
     };
@@ -138,15 +139,16 @@ std::shared_ptr<OversetData> assemblyViaExchange(MessagePasser mp,
       Tracer::end(s);
     };
     Parfait::Inspector inspector(mp,0,beginTrace,endTrace);
-
     Tracer::begin("partition info");
     PartitionInfo partition_info(view, mp.Rank());
     Tracer::end("partition info");
+    yogaMemProbe("after PartitionInfo", mp.Rank());
     Tracer::traceMemory();
 
     Tracer::begin("build mesh system info");
     MeshSystemInfo mesh_system_info(mp, partition_info);
     Tracer::end("build mesh system info");
+    yogaMemProbe("after MeshSystemInfo", mp.Rank());
     Tracer::traceMemory();
 
 
@@ -160,6 +162,7 @@ std::shared_ptr<OversetData> assemblyViaExchange(MessagePasser mp,
                                                               inspector);
     auto& frags_from_ranks = fragments_and_affinities.first;
     auto& affinities = fragments_and_affinities.second;
+    yogaMemProbe("after createAndBalanceFragments", mp.Rank());
 
     FragmentDonorFinder donor_finder(frags_from_ranks,is_in_cell);
     Tracer::traceMemory();
@@ -169,22 +172,23 @@ std::shared_ptr<OversetData> assemblyViaExchange(MessagePasser mp,
     if(mesh_system_info.numberOfComponents() == int(component_grid_importance.size())) {
         modifyDistanceBasedOnComponentImportance(frags_from_ranks, component_grid_importance);
     }
-
     auto node_keys_for_ranks =
         buildNodeKeysForRanks(mp, frags_from_ranks, affinities, donor_finder);
-
     auto receptors = performDonorSearchViaSingleExchange(mp,
                                                          inspector,
                                                          frags_from_ranks,
                                                          node_keys_for_ranks,
                                                          donor_finder,
                                                          g2l);
+    yogaMemProbe("after donor search", mp.Rank());
     addNodeNeighborsToReceptors(receptors,view,g2l);
+    yogaMemProbe("after addNodeNeighbors", mp.Rank());
     node_keys_for_ranks.clear();
     frags_from_ranks.clear();
     donor_finder.clear();
     auto statuses = generateNodeStatuses(mp,partition_info,mesh_system_info,
                                          view,receptors,g2l,extra_layers,should_add_max_receptors);
+    yogaMemProbe("after generateNodeStatuses", mp.Rank());
     printStats(view, statuses, rootPrinter, mp);
 
 
@@ -365,7 +369,7 @@ std::vector<NodeStatus> generateNodeStatuses(MessagePasser mp,
                                              std::vector<Receptor>& receptors,
                                              const std::map<long,int>& g2l,
                                              int extra_layers,
-                                             bool should_add_max_receptors) {
+                                                 bool should_add_max_receptors) {
     Tracer::begin("type assignment");
     std::vector<Parfait::Extent<double>> component_grid_extents;
     for(int i=0;i<mesh_system_info.numberOfComponents();i++)
@@ -383,6 +387,9 @@ std::vector<NodeStatus> generateNodeStatuses(MessagePasser mp,
                                     partition_info,
                                     mesh_system_info,
                                     config.maxHoleMapCells());
+    yogaMemProbe("after hole maps", mp.Rank());
+
+    yogaMemProbe("before DruyorTypeAssignment", mp.Rank());
 
     auto statuses = DruyorTypeAssignment::getNodeStatuses(mesh,
                                                           receptors,
@@ -394,6 +401,7 @@ std::vector<NodeStatus> generateNodeStatuses(MessagePasser mp,
                                                           hole_maps,
                                                           extra_layers,
                                                           should_add_max_receptors,
+                                                          config.maxHoleMapCells(),
                                                           mp);
     Tracer::end("type assignment");
     Tracer::traceMemory();

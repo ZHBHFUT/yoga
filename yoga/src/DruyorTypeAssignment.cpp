@@ -1,3 +1,4 @@
+#include "yoga_win_msvc.h"
 #include "DruyorTypeAssignment.h"
 #include <parfait/SyncField.h>
 #include "CartesianLoadBalancer.h"
@@ -8,11 +9,13 @@
 #include "FloodFill.h"
 #include "YogaToTInfinityAdapter.h"
 #include "CartBlockGenerator.h"
+#include "YogaMemoryProbe.h"
 #include <t-infinity/Shortcuts.h>
 #include <t-infinity/MeshSanityChecker.h>
 #include <t-infinity/CartMesh.h>
 using namespace inf;
 namespace YOGA {
+
 void visualizeHoleMaps(MessagePasser mp,const std::vector<ScalableHoleMap>& hole_maps){
     if(0 == mp.Rank()) {
         MessagePasser root_only(MPI_COMM_SELF);
@@ -41,6 +44,7 @@ DruyorTypeAssignment::DruyorTypeAssignment(const YogaMesh& mesh,
                                            const std::vector<ScalableHoleMap>& hole_maps,
                                            int extra_layers,
                                            bool should_add_max_receptors,
+                                           int max_cart_image_cells,
                                            MessagePasser mp)
     : mesh(mesh),
       extra_layers_for_bcs(extra_layers),
@@ -49,10 +53,11 @@ DruyorTypeAssignment::DruyorTypeAssignment(const YogaMesh& mesh,
       sync_pattern(syncPattern),
       partition_info(partitionInfo),
       mesh_system_info(mesh_system_info),
+      max_cart_image_cells(std::max(1, max_cart_image_cells)),
       mp(mp),
       node_to_node(Connectivity::nodeToNode(mesh))
 {
-    //visualizeHoleMaps(mp,hole_maps);
+    yogaMemProbe("Druyor ctor enter (after n2n)", mp.Rank());
     auto candidate_hole_points = getIdsOfHoleNodes(mesh,hole_maps);
     std::map<long,int> global_to_receptor_index;
     for(int i=0;i<long(receptors.size());i++){
@@ -85,15 +90,18 @@ DruyorTypeAssignment::DruyorTypeAssignment(const YogaMesh& mesh,
 
     std::vector<int> is_hole(mesh.nodeCount(),0);
     for(long gid:actual_hole_ids){
-        is_hole[globalToLocal.at(gid)] = 1;
+        auto it = globalToLocal.find(gid);
+        if (it != globalToLocal.end()) {
+            is_hole[it->second] = 1;
+        }
     }
-
     syncVector(mp, is_hole, globalToLocal, sync_pattern);
     for(int i=0;i<mesh.nodeCount();i++){
         if(is_hole[i]){
             hole_nodes.push_back(mesh.globalNodeId(i));
         }
     }
+    yogaMemProbe("Druyor ctor done", mp.Rank());
 }
 
 void DruyorTypeAssignment::turnOutIntoReceptorIfValidDonorsExist(std::vector<StatusKeeper>& node_statuses) {
@@ -115,12 +123,13 @@ std::vector<StatusKeeper> DruyorTypeAssignment::getNodeStatuses(const YogaMesh& 
                                                               const std::vector<ScalableHoleMap>& hole_maps,
                                                               int extra_layers,
                                                               bool should_add_max_receptors,
+                                                              int max_cart_image_cells,
                                                               MessagePasser mp) {
     Tracer::begin("Construct type assignment");
     DruyorTypeAssignment typeAssignment(
         mesh, receptors, g2l,
         syncPattern, partitionInfo,system_info,component_grid_extents,
-        hole_maps, extra_layers,should_add_max_receptors,mp);
+        hole_maps, extra_layers,should_add_max_receptors,max_cart_image_cells,mp);
     Tracer::end("Construct type assignment");
 
     Tracer::begin("Determine statuses");
@@ -168,17 +177,17 @@ void DruyorTypeAssignment::convertUnknownToOut(std::vector<StatusKeeper>& status
 }
 
 void DruyorTypeAssignment::convertRemainingCandidates(std::vector<StatusKeeper>& statuses) const {
-    enum {out,adjacent,near,far};
-    std::vector<int> distance_to_out(statuses.size(),far);
+    enum DistanceClass { kDistOut, kDistAdjacent, kDistNear, kDistFar };
+    std::vector<int> distance_to_out(statuses.size(), kDistFar);
     for(int id=0;id<mesh.nodeCount();id++){
         if(statuses[id].value() == NodeStatus::OutNode){
-            distance_to_out[id] = out;
+            distance_to_out[id] = kDistOut;
         }
     }
     for(int id=0;id<mesh.nodeCount();id++){
         auto& nbrs = node_to_node[id];
-        if(distance_to_out[id] == far and doSelectedNodesContain(nbrs,NodeStatus::OutNode,statuses)){
-            distance_to_out[id] = adjacent;
+        if(distance_to_out[id] == kDistFar and doSelectedNodesContain(nbrs,NodeStatus::OutNode,statuses)){
+            distance_to_out[id] = kDistAdjacent;
         }
     }
     syncVector(mp, distance_to_out, globalToLocal, sync_pattern);
@@ -186,10 +195,10 @@ void DruyorTypeAssignment::convertRemainingCandidates(std::vector<StatusKeeper>&
         auto& nbrs = node_to_node[id];
         bool has_adj_nbr = false;
         for(int nbr:nbrs){
-            if(distance_to_out[nbr] == adjacent) has_adj_nbr = true;
+            if(distance_to_out[nbr] == kDistAdjacent) has_adj_nbr = true;
         }
-        if(distance_to_out[id] == far and has_adj_nbr){
-            distance_to_out[id] = near;
+        if(distance_to_out[id] == kDistFar and has_adj_nbr){
+            distance_to_out[id] = kDistNear;
         }
     }
     syncVector(mp, distance_to_out, globalToLocal, sync_pattern);
@@ -200,7 +209,7 @@ void DruyorTypeAssignment::convertRemainingCandidates(std::vector<StatusKeeper>&
             auto& s = statuses[id];
             if (ReceptorCandidate == s.value()) {
                 auto& nbrs = node_to_node[id];
-                if (doSelectedNodesContain(nbrs, NodeStatus::InNode, statuses) and distance_to_out[id] == far) {
+                if (doSelectedNodesContain(nbrs, NodeStatus::InNode, statuses) and distance_to_out[id] == kDistFar) {
                     s.transition(InNode);
                     n_changed++;
                 }
@@ -679,12 +688,10 @@ std::shared_ptr<FieldInterface> getFilteredStatusField(
 std::vector<StatusKeeper> DruyorTypeAssignment::determineNodeStatuses2() {
     RootPrinter root_printer(mp.Rank());
     root_printer.print("Yoga: assigning node statuses\n");
-
-    //std::vector<double> component_ids(mesh.nodeCount(),0);
-    //for(int i=0;i<mesh.nodeCount();i++)
-    //    component_ids[i] = mesh.getAssociatedComponentId(i);
+    yogaMemProbe("determineNodeStatuses2 enter", mp.Rank());
 
     auto is_mine = getIsNodeMine();
+    yogaMemProbe("after getIsNodeMine", mp.Rank());
     std::vector<StatusKeeper> statuses(mesh.nodeCount());
     StatusCounts counts;
     updateCounts(statuses,counts,is_mine);
@@ -705,6 +712,7 @@ std::vector<StatusKeeper> DruyorTypeAssignment::determineNodeStatuses2() {
 
     auto receptor_indices = getReceptorIndices();
     markMandatoryReceptors(statuses, is_mine, mesh);
+    yogaMemProbe("after markMandatoryReceptors", mp.Rank());
     updateCounts(statuses,counts,is_mine);
     printCounts("Mark mandatory receptors",counts);
 
@@ -727,6 +735,7 @@ std::vector<StatusKeeper> DruyorTypeAssignment::determineNodeStatuses2() {
 
 
     tryToMakeNodesInIfTheyOverlapMandatoryReceptors(statuses);
+    yogaMemProbe("after tryToMakeNodesIn", mp.Rank());
     //filtered_status = getFilteredStatusField(statuses,filter);
     //shortcut::visualize("step_4.vtk",mp,component_0_mesh,{filtered_status});
 
@@ -791,24 +800,28 @@ std::vector<StatusKeeper> DruyorTypeAssignment::determineNodeStatuses2() {
 
     convertUnknownToOut(statuses);
     convertRemainingCandidates(statuses);
+    yogaMemProbe("after convertRemainingCandidates", mp.Rank());
     updateCounts(statuses,counts,is_mine);
     printCounts("Convert remaining",counts);
     //filtered_status = getFilteredStatusField(statuses,filter);
     //shortcut::visualize("step_14.vtk",mp,component_0_mesh,{filtered_status});
 
     filterOrphansThatAreOutsideComputationalDomain(statuses);
+    yogaMemProbe("after filterOrphans", mp.Rank());
     updateCounts(statuses,counts,is_mine);
     printCounts("Filter orphans outside computational domain",counts);
     //filtered_status = getFilteredStatusField(statuses,filter);
     //shortcut::visualize("step_15.vtk",mp,component_0_mesh,{filtered_status});
     
     performSanityChecks(statuses);
+    yogaMemProbe("determineNodeStatuses2 done", mp.Rank());
 
     return statuses;
 }
 void DruyorTypeAssignment::tryToMakeNodesInIfTheyOverlapMandatoryReceptors(std::vector<StatusKeeper>& statuses) {
     auto node_extents = generateNodeExtents();
-    int max_cells = 1 * 1024 * 1024;
+    yogaMemProbe("after generateNodeExtents", mp.Rank());
+    const int max_cells = max_cart_image_cells;
     std::vector<Parfait::CartBlock> mandatory_receptor_images;
     std::vector<std::vector<bool>> image_counts;
     for (int component = 0; component < mesh_system_info.numberOfComponents(); component++) {
@@ -827,9 +840,10 @@ void DruyorTypeAssignment::tryToMakeNodesInIfTheyOverlapMandatoryReceptors(std::
             auto& block = mandatory_receptor_images.back();
             image_counts.emplace_back(createMandatoryReceptorMask(block, component, statuses, node_extents));
         } else {
-            image_counts.emplace_back(std::vector<bool>(max_cells, false));
+            image_counts.emplace_back(mandatory_receptor_images.back().numberOfCells(), false);
         }
     }
+    yogaMemProbe("after mandatory receptor images", mp.Rank());
 
     std::vector<int> ids_to_make_in;
     for (size_t i = 0; i < statuses.size(); i++) {
@@ -842,8 +856,11 @@ void DruyorTypeAssignment::tryToMakeNodesInIfTheyOverlapMandatoryReceptors(std::
                 if (not mesh_system_info.getComponentExtent(j).intersects(p)) continue;
                 auto& block = mandatory_receptor_images[j];
                 auto& mask = image_counts[j];
+                if (not block.intersects(p)) continue;
                 int overlapping_image_cell = block.getIdOfContainingCell(p.data());
-                if (mask[overlapping_image_cell]) {
+                if (overlapping_image_cell >= 0 &&
+                    static_cast<size_t>(overlapping_image_cell) < mask.size() &&
+                    mask[overlapping_image_cell]) {
                     ids_to_make_in.push_back(i);
                     break;
                 }
@@ -886,6 +903,7 @@ void DruyorTypeAssignment::filterOrphansThatAreOutsideComputationalDomain(std::v
     n = mp.ParallelSum(n);
     if(mp.Rank() == 0)
         printf("There were %i orphans on interpolation boundaries who might be inside an unclosed body\n",n);
+    yogaMemProbe("filterOrphans before flood fill", mp.Rank());
     auto sync = [&](){
         Tracer::begin("syncVector");
         syncVector(mp, status_vector, globalToLocal, sync_pattern);
@@ -896,6 +914,7 @@ void DruyorTypeAssignment::filterOrphansThatAreOutsideComputationalDomain(std::v
     allowed_transitions[NodeStatus::Orphan] = NodeStatus::OutNode;
     allowed_transitions[NodeStatus::InNode] = NodeStatus::OutNode;
     floodFill.fill(status_vector,seeds,allowed_transitions,sync,parallel_max);
+    yogaMemProbe("filterOrphans after flood fill", mp.Rank());
 
     for(size_t i=0;i<statuses.size();i++)
         statuses[i].current = static_cast<NodeStatus>(status_vector[i]);

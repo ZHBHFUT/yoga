@@ -9,6 +9,9 @@ namespace inf {
 std::string getInfDir() {
     char* settings_dir = getenv("INF_SETTINGS_DIR");
     if (not settings_dir) settings_dir = getenv("HOME");
+#if defined(_WIN32)
+    if (not settings_dir) settings_dir = getenv("USERPROFILE");
+#endif
     if (not settings_dir) settings_dir = getpwuid(getuid())->pw_dir;
     return std::string(settings_dir) + "/.infinity";
 }

@@ -1,6 +1,15 @@
 
 #pragma once
 
+#ifdef _WIN32
+#pragma push_macro("interface")
+#pragma push_macro("IN")
+#pragma push_macro("OUT")
+#undef interface
+#undef IN
+#undef OUT
+#endif
+
 #include <parfait/SyncPattern.h>
 #include "Connectivity.h"
 #include "DonorCollector.h"
@@ -22,6 +31,7 @@ class DruyorTypeAssignment {
                          const std::vector<ScalableHoleMap>& hole_maps,
                          int extra_layers,
                          bool should_add_max_receptors,
+                         int max_cart_image_cells,
                          MessagePasser mp);
 
     void turnOutIntoReceptorIfValidDonorsExist(std::vector<StatusKeeper>& node_statuses);
@@ -36,6 +46,7 @@ class DruyorTypeAssignment {
                                                    const std::vector<ScalableHoleMap>& hole_maps,
                                                    int extra_layers,
                                                    bool should_add_max_receptors,
+                                                   int max_cart_image_cells,
                                                    MessagePasser mp);
 
     void performSanityChecks(const std::vector<StatusKeeper>& statuses);
@@ -103,6 +114,7 @@ class DruyorTypeAssignment {
     const Parfait::SyncPattern& sync_pattern;
     const PartitionInfo& partition_info;
     const MeshSystemInfo& mesh_system_info;
+    const int max_cart_image_cells;
     MessagePasser mp;
     std::vector<std::vector<int>> node_to_node;
 
@@ -141,4 +153,9 @@ bool isOrphanAndHasNoDonorCandidates(const std::vector<int>& status_vector,
                                      const std::set<int>& receptor_ids,
                                      int node) const;
 };
+#ifdef _WIN32
+#pragma pop_macro("interface")
+#pragma pop_macro("IN")
+#pragma pop_macro("OUT")
+#endif
 }

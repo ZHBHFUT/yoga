@@ -1,4 +1,5 @@
 #include "ReverseCutthillMckee.h"
+#include <numeric>
 
 using namespace inf;
 

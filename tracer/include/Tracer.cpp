@@ -6,6 +6,10 @@
 #include <stdlib.h>
 #include <vector>
 #include <memory>
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#endif
 
 #define INSTANCE                                 \
     if (global_tracer_handle == nullptr) return; \
@@ -147,7 +151,16 @@ size_t Tracer::availableMemoryMB() {
 }
 #endif
 
-#ifdef __APPLE__
+#ifdef _WIN32
+size_t Tracer::usedMemoryMB() {
+    PROCESS_MEMORY_COUNTERS pmc = {};
+    pmc.cb = sizeof(pmc);
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+        return static_cast<size_t>(pmc.WorkingSetSize / (1024U * 1024U));
+    }
+    return 0;
+}
+#elif defined(__APPLE__)
 size_t Tracer::usedMemoryMB() {
     struct task_basic_info t_info;
     mach_msg_type_number_t t_info_count = TASK_BASIC_INFO_COUNT;
@@ -168,6 +181,9 @@ size_t parseLine(char* line) {
 size_t Tracer::usedMemoryMB() {  // Note: this value is in MB!
     FILE* file = fopen("/proc/self/status", "r");
     size_t result = 0;
+    if (!file) {
+        return 0;
+    }
     char line[128];
 
     while (fgets(line, 128, file) != NULL) {

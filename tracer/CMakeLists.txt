@@ -12,7 +12,11 @@ set(HEADER_FILES include/Tracer.h
 
 add_library(tracer SHARED include/Tracer.cpp include/tracer_c_interface.cpp include/TracerImpl.h)
 add_library(tracer_static  STATIC include/Tracer.cpp include/tracer_c_interface.cpp include/TracerImpl.h)
-set_target_properties(tracer_static PROPERTIES OUTPUT_NAME tracer)
+if(WIN32)
+  set_target_properties(tracer_static PROPERTIES OUTPUT_NAME tracer_static)
+else()
+  set_target_properties(tracer_static PROPERTIES OUTPUT_NAME tracer)
+endif()
 add_library(tracer::tracer ALIAS tracer)
 add_library(tracer::tracer_static ALIAS tracer_static)
 target_include_directories(tracer PUBLIC

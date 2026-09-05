@@ -11,7 +11,7 @@ namespace YOGA {
 class CartesianLoadBalancer : public LoadBalancer {
   public:
     CartesianLoadBalancer(
-        MessagePasser mp, const YogaMesh& mesh, MeshSystemInfo& info);
+        MessagePasser mp, const YogaMesh& mesh, MeshSystemInfo& info, int max_cart_image_cells);
     Parfait::Extent<double> getWorkVoxel();
     int getRemainingVoxelCount() { return workVoxels.size(); }
 

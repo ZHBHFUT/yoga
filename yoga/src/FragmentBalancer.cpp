@@ -1,5 +1,7 @@
 #include "FragmentBalancer.h"
 #include <map>
+#include <stdexcept>
+#include <string>
 #include <MessagePasser/MessagePasser.h>
 #include <parfait/RecursiveBisection.h>
 #include "YogaMesh.h"
@@ -11,6 +13,47 @@
 
 namespace YOGA {
 
+#ifdef _WIN32
+// MS-MPI + sparse Balance partitions can trigger findOwner failures in parallel RCB.
+static std::vector<int> windowsGatherSerialRcb(MessagePasser mp,
+                                               const Agglomeration& agglomeration,
+                                               int target_partitions,
+                                               double tol) {
+    const int local_n = static_cast<int>(agglomeration.points.size());
+    auto counts = mp.Gather(local_n);
+    int global_n = 0;
+    for (int c : counts) {
+        global_n += c;
+    }
+    int begin = 0;
+    for (int r = 0; r < mp.Rank(); ++r) {
+        begin += counts[r];
+    }
+
+    std::vector<Parfait::Point<double>> global_points;
+    std::vector<int> global_part;
+    auto points_by_rank = mp.Gather(agglomeration.points);
+    if (mp.Rank() == 0) {
+        global_points.reserve(static_cast<size_t>(global_n));
+        for (int r = 0; r < mp.NumberOfProcesses(); ++r) {
+            for (const auto& p : points_by_rank[r]) {
+                global_points.push_back(p);
+            }
+        }
+        if (global_n > 0) {
+            global_part = Parfait::recursiveBisection(global_points, target_partitions, tol);
+        }
+    }
+    mp.Broadcast(global_part, global_n, 0);
+
+    std::vector<int> local_part;
+    if (local_n > 0) {
+        local_part.assign(global_part.begin() + begin, global_part.begin() + begin + local_n);
+    }
+    return local_part;
+}
+#endif
+
 std::pair<FragmentMap, AffinityMap> createAndBalanceFragments(MessagePasser mp,
                                                               const YogaMesh& mesh,
                                                               const PartitionInfo& partition_info,
@@ -19,21 +62,30 @@ std::pair<FragmentMap, AffinityMap> createAndBalanceFragments(MessagePasser mp,
                                                               int rcb_agglom_ncells,
                                                               Parfait::Inspector& inspector) {
     auto agglomeration = agglomerateCells(mesh, inspector, partition_info, mesh_system_info, rcb_agglom_ncells);
-
     int target_partitions = mp.NumberOfProcesses();
     Tracer::begin("parallel rcb");
-    auto part = Parfait::recursiveBisection(mp, agglomeration.points, target_partitions, 1.0e-4);
+    std::vector<int> part;
+#if defined(_WIN32)
+    if (mp.NumberOfProcesses() > 1) {
+        part = windowsGatherSerialRcb(mp, agglomeration, target_partitions, 1.0e-4);
+    } else {
+        part = Parfait::recursiveBisection(agglomeration.points, target_partitions, 1.0e-4);
+    }
+#else
+    try {
+        part = Parfait::recursiveBisection(mp, agglomeration.points, target_partitions, 1.0e-4);
+    } catch (const std::exception&) {
+        throw;
+    }
+#endif
     Tracer::end("parallel rcb");
-
     Tracer::begin("map to ranks");
     auto cell_ids_for_partitions = mapCellIdsToRanks(agglomeration.ids, part);
     Tracer::end("map to ranks");
-
     Tracer::begin("create exchange fragments");
     auto fragments_for_ranks = extractFragmentsForRanks(mp, mesh, cell_ids_for_partitions);
     auto node_fragment_affinity = buildNodeAffinities(mesh, g2l, fragments_for_ranks);
     Tracer::end("create exchange fragments");
-
     Tracer::begin("exchange");
     auto frags_from_ranks = mp.Exchange(fragments_for_ranks, VoxelFragment::pack, VoxelFragment::unpack);
     auto affinities = exchangeNodeAffinities(mp, node_fragment_affinity);
@@ -66,7 +118,7 @@ Agglomeration agglomerateCells(const YogaMesh& view,
                                Parfait::Inspector& inspector,
                                const PartitionInfo& partition_info,
                                const MeshSystemInfo& mesh_system_info,
-                               int rcb_agglom_ncells) {
+                                                               int rcb_agglom_ncells) {
     inspector.begin("overdecompose");
     std::vector<int> owned_cell_ids = OverDecomposer::identifyOwnedCells(view, partition_info, mesh_system_info);
     int n_sub_partitions = OverDecomposer::calcNumberOfPartitions(owned_cell_ids.size(), rcb_agglom_ncells);

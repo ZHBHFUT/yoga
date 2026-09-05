@@ -1,3 +1,8 @@
+#ifdef _WIN32
+#include <cstdint>
+using u_int64_t = std::uint64_t;
+#endif
+
 #include "Snap.h"
 #include "VectorFieldAdapter.h"
 #include <MessagePasser/MessagePasser.h>

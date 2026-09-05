@@ -1,7 +1,17 @@
 #include "FileTools.h"
 #include <fstream>
 #include <string.h>
+#include <cstring>
+#ifdef _WIN32
+#include "getline.h"
 #include <sys/stat.h>
+#include <io.h>
+#else
+#include <sys/stat.h>
+#ifndef S_IFDIR
+#define S_IFDIR _S_IFDIR
+#endif
+#endif
 #include <glob.h>
 #include "StringTools.h"
 #include "Throw.h"
@@ -78,10 +88,18 @@ void Parfait::FileTools::appendToFile(std::string filename, std::string message)
     fclose(fp);
 }
 bool Parfait::FileTools::doesDirectoryExist(std::string directory) {
+#ifdef _WIN32
+    struct stat info;
+    std::memset(&info, 0, sizeof(info));
+    if (stat(directory.c_str(), &info) != 0)
+        return false;
+    else if ((info.st_mode & S_IFDIR) != 0)
+#else
     struct stat info;
     if (stat(directory.c_str(), &info) != 0)
         return false;
     else if (info.st_mode & S_IFDIR)
+#endif
         return true;
     else
         return false;

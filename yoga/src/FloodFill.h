@@ -10,16 +10,37 @@ class FloodFill {
     FloodFill(const std::vector<std::vector<int>>& node_to_node) : n2n(node_to_node) {}
     void fill(std::vector<int>& node_values, std::set<int> seeds,const std::map<int,int>& allowed_transitions) {
         std::queue<int> queue;
-        for (auto seed : seeds) queue.push(seed);
+        std::vector<char> enqueued(node_values.size(), 0);
+        for (auto seed : seeds) {
+            if (seed < 0 || seed >= int(node_values.size())) {
+                continue;
+            }
+            if (!enqueued[seed]) {
+                queue.push(seed);
+                enqueued[seed] = 1;
+            }
+        }
         while (not queue.empty()) {
             int node_id = queue.front();
             queue.pop();
+            if (node_id < 0 || node_id >= int(node_values.size())) {
+                continue;
+            }
             int current_value = node_values[node_id];
             if (allowed_transitions.count(current_value) == 1)
                 node_values[node_id] = allowed_transitions.at(current_value);
+            if (node_id >= int(n2n.size())) {
+                continue;
+            }
             for (int nbr : n2n[node_id]) {
+                if (nbr < 0 || nbr >= int(node_values.size())) {
+                    continue;
+                }
                 int nbr_value = node_values[nbr];
-                if (allowed_transitions.count(nbr_value) == 1) queue.push(nbr);
+                if (allowed_transitions.count(nbr_value) == 1 && !enqueued[nbr]) {
+                    queue.push(nbr);
+                    enqueued[nbr] = 1;
+                }
             }
         }
     }

@@ -58,7 +58,10 @@ void* yoga_create_instance(int comm,
     MessagePasser mp(yoga_comm);
     auto config = YogaConfiguration(mp);
     Tracer::setDebug();
-    if(mp.Rank() == 0) printf("Yoga, registering functions from solver\n");
+    if(mp.Rank() == 0) {
+        printf("Yoga, registering functions from solver\n");
+        fflush(stdout);
+    }
     bool is_complex = FUN3DComplexChecker::isComplex(getPoint);
     if(mp.Rank() == 0){
         if(is_complex)
@@ -86,20 +89,16 @@ void* yoga_create_instance(int comm,
     mesh.setOwningRankForNodes(getRankOfNodeOwner);
     mesh.setComponentIdsForNodes(getComponentId);
     mesh.fixInvalidFun3DComponentIds(mp);
-
     mesh.setCellCount(numberOfCells());
     mesh.setCells(numberOfNodesInCell, getNodesInCell);
-
     mesh.setFaceCount(getNumberOfBoundaryFaces());
     mesh.setFaces(numberOfNodesInBoundaryFace, getNodesInFace);
     mesh.setBoundaryConditions(getBoundaryCondition,numberOfNodesInBoundaryFace);
-
     Tracer::end("Set up YogaMesh");
 
     if(config.shouldDumpPartFile()){
         writeFUN3DPartitionFile(mp,"fun3d_part_file.data",mesh,true);
     }
-
     return new YogaInstance(mp,
                             std::move(mesh),
                             numberOfSolutionVars,

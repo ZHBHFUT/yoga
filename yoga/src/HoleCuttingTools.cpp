@@ -1,4 +1,6 @@
 #include "HoleCuttingTools.h"
+#include "YogaMemoryProbe.h"
+#include <string>
 
 namespace YOGA {
 
@@ -10,6 +12,7 @@ std::vector<ScalableHoleMap> createHoleMaps(MessagePasser mp,
     std::vector<ScalableHoleMap> hole_maps;
     for (int i = 0; i < meshSystemInfo.numberOfBodies(); i++) {
         hole_maps.emplace_back(ScalableHoleMap(mp, view, partitionInfo, meshSystemInfo, i, max_cells_per_hole_map));
+        yogaMemProbe(("after hole map body " + std::to_string(i)).c_str(), mp.Rank());
     }
     return hole_maps;
 }

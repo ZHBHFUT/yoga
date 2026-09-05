@@ -5,11 +5,18 @@
 namespace MessagePasserImpl {
 
 inline size_t findOwner(const std::vector<size_t>& counts, long gid) {
+    if (gid < 0) {
+        throw std::logic_error("Could not find owner");
+    }
     for (size_t i = 0; i < counts.size(); i++) {
-        gid -= counts[i];
-        if (gid < 0) {
+        const auto bucket = counts[i];
+        if (bucket == 0) {
+            continue;
+        }
+        if (gid < static_cast<long>(bucket)) {
             return i;
         }
+        gid -= static_cast<long>(bucket);
     }
     throw std::logic_error("Could not find owner");
 }

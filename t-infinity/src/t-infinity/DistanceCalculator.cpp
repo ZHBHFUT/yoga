@@ -1,4 +1,5 @@
 #include "DistanceCalculator.h"
+#include "BetterDistanceCalculator.h"
 
 #include <Tracer.h>
 #include <parfait/DistanceTree.h>
@@ -179,16 +180,6 @@ void appendTri6Facets(std::vector<Facet>& facets,
     metadata.push_back(m);
     metadata.push_back(m);
     metadata.push_back(m);
-}
-
-double furthestDistanceBetween(const Parfait::Extent<double>& e1,
-                               const Parfait::Extent<double>& e2) {
-    return (e1.center() - e2.center()).magnitude() + e1.radius() + e2.radius();
-}
-
-double closestDistanceBetween(const Parfait::Extent<double>& e1,
-                              const Parfait::Extent<double>& e2) {
-    return (e1.center() - e2.center()).magnitude() - e1.radius() - e2.radius();
 }
 
 template <typename FillPoint, typename FillCell, typename CellType, typename GetMetaData>

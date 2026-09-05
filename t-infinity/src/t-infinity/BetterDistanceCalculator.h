@@ -80,7 +80,7 @@ extractNeededFacetsAsSearchable(const std::vector<Parfait::Facet>& facets,
 namespace dist {
     void traceMemoryParallel(MessagePasser mp);
 }
-std::vector<double> calcBetterDistance2D(
+inline std::vector<double> calcBetterDistance2D(
     MessagePasser mp,
     const std::vector<Parfait::LineSegment>& segments_partitioned,
     const std::vector<Parfait::Point<double>>& points,

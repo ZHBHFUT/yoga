@@ -23,7 +23,8 @@ class MDIndex<Dim, LayoutLeft> {
     }
     template <typename... Args>
     size_t calcIndex(int rank, size_t index, int i, Args... args) const {
-        index += i * std::accumulate(d.begin(), &d[rank], 1, std::multiplies<>());
+        index += static_cast<size_t>(i) *
+                 std::accumulate(d.begin() + rank, d.end(), size_t{1}, std::multiplies<size_t>());
         return calcIndex(++rank, index, args...);
     }
     size_t calcIndex(int rank, size_t index) const { return index; }
@@ -42,7 +43,8 @@ class MDIndex<Dim, LayoutRight> {
     }
     template <typename... Args>
     void calcIndex(int rank, size_t& index, int i, Args... args) const {
-        index += i * std::accumulate(&d[rank], d.end(), 1, std::multiplies<>());
+        index += static_cast<size_t>(i) *
+                 std::accumulate(d.begin() + rank, d.end(), size_t{1}, std::multiplies<size_t>());
         rank += 1;
         calcIndex(rank, index, args...);
     }

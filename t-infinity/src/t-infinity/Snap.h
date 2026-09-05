@@ -1,6 +1,7 @@
 #pragma once
 #include <MessagePasser/MessagePasser.h>
 #include <memory>
+#include <cstdint>
 #include "Communicator.h"
 #include "MeshInterface.h"
 #include <parfait/Throw.h>
@@ -45,8 +46,13 @@ class Snap {
     std::map<Association, Parfait::Topology> topologies;
     std::map<std::string, std::shared_ptr<inf::FieldInterface>> fields;
     size_t chunk_max_size_in_MB = 10;
+#ifdef _WIN32
+    std::uint64_t version_read = 0;
+    std::uint64_t latest_version = 3;
+#else
     u_int64_t version_read = 0;
     u_int64_t latest_version = 3;
+#endif
 
     std::map<long, std::set<int>> buildGlobalToLocals(const std::vector<long>& gids) const;
     void writeField(FileStreamer& f, const FieldInterface& field) const;

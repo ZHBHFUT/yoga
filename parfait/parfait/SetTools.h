@@ -1,6 +1,7 @@
 #pragma once
 #include <set>
 #include <algorithm>
+#include <iterator>
 
 namespace Parfait {
 namespace SetTools {

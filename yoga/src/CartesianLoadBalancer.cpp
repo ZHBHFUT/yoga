@@ -1,5 +1,6 @@
 #include "CartesianLoadBalancer.h"
 #include <Tracer.h>
+#include <algorithm>
 #include <parfait/CartBlockVisualize.h>
 #include <parfait/LinearPartitioner.h>
 #include <parfait/RecursiveBisection.h>
@@ -8,8 +9,10 @@
 
 namespace YOGA {
 
-CartesianLoadBalancer::CartesianLoadBalancer(MessagePasser mp, const YogaMesh& mesh, MeshSystemInfo& info)
+CartesianLoadBalancer::CartesianLoadBalancer(MessagePasser mp, const YogaMesh& mesh, MeshSystemInfo& info,
+                                             int max_cart_image_cells)
     : targetNodesPerVoxel(calcTargetNodesPerVoxel(mesh.nodeCount())) {
+    const int max_cells = std::max(1, max_cart_image_cells);
     auto overlap_extent = getExtentOfSystem(info);
     Parfait::CartBlock block(overlap_extent, 1, 1, 1);
     std::vector<Parfait::Extent<double>> component_extents;
@@ -21,7 +24,7 @@ CartesianLoadBalancer::CartesianLoadBalancer(MessagePasser mp, const YogaMesh& m
     for (int i = 0; i < block.numberOfCells(); ++i) {
         voxels.push_back(std::make_pair(nodeCountPerCell[i], block.createExtentFromCell(i)));
     }
-    auto mesh_image = generateCartBlock(overlap_extent, 1000000);
+    auto mesh_image = generateCartBlock(overlap_extent, max_cells);
     auto image_node_counts =
         MeshDensityEstimator::tallyNodesContainedByCartCells(mp, mesh, component_extents, mesh_image);
     // refine(mp, mesh, mesh_image, image_node_counts, info, voxels);

@@ -16,6 +16,8 @@ namespace plugins {
     inline std::vector<std::string> possibleExtensions() {
 #if __APPLE__
         return {".dylib", ".so"};
+#elif defined(_WIN32)
+        return {".dll"};
 #else
         return {".so"};
 #endif

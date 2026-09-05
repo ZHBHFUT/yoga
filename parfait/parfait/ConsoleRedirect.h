@@ -18,7 +18,11 @@ class Console {
     inline void reset() {
         fflush(stdout);
         dup2(new_file_descriptor, fileno(stdout));
+#ifdef _WIN32
+        _close(new_file_descriptor);
+#else
         close(new_file_descriptor);
+#endif
         clearerr(stdout);
         fsetpos(stdout, &pos);
     }
